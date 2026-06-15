@@ -77,7 +77,7 @@ function action_apply(): never {
     $stmt->execute([$u['user_id'], $type, $startDate, $endDate, $days, $reason, $docPath]);
     $leaveId = db()->lastInsertId();
 
-    audit_log($u['user_id'], 'leave_apply', "$type leave $startDate–$endDate ($days days)", 'leave');
+    audit_log($u['user_id'], 'leave_apply', "$type leave $startDate to $endDate ($days days)", 'leave');
     json_ok(['leave_id' => $leaveId, 'days' => $days], 201);
 }
 
@@ -93,11 +93,11 @@ function business_days(string $from, string $to): int {
     return $count;
 }
 
-function get_balance(int $userId, string $type): ?int {
-    $stmt = db()->prepare('SELECT balance FROM leave_balances WHERE user_id = ? AND type = ? LIMIT 1');
+function get_balance(int $userId, string $type): ?float {
+    $stmt = db()->prepare('SELECT remaining FROM leave_balances WHERE user_id = ? AND leave_type = ? LIMIT 1');
     $stmt->execute([$userId, $type]);
     $row = $stmt->fetch();
-    return $row ? (int)$row['balance'] : null;
+    return $row ? (float)$row['remaining'] : null;
 }
 
 function handle_upload(array $file, string $subdir): string {
@@ -173,7 +173,7 @@ function action_approve(): never {
 
     // Deduct balance
     db()->prepare(
-        'UPDATE leave_balances SET balance = balance - ? WHERE user_id = ? AND type = ?'
+        'UPDATE leave_balances SET used = used + ? WHERE user_id = ? AND leave_type = ?'
     )->execute([$req['days'], $req['user_id'], $req['type']]);
 
     // Auto-set attendance records to ON_LEAVE for the date range
@@ -231,7 +231,7 @@ function action_cancel(): never {
 
     // Restore balance if was approved
     if ($req['status'] === 'approved') {
-        db()->prepare('UPDATE leave_balances SET balance = balance + ? WHERE user_id = ? AND type = ?')
+        db()->prepare('UPDATE leave_balances SET used = GREATEST(0, used - ?) WHERE user_id = ? AND leave_type = ?')
             ->execute([$req['days'], $u['user_id'], $req['type']]);
     }
 
@@ -251,7 +251,7 @@ function action_balance(): never {
     }
 
     $stmt = db()->prepare(
-        'SELECT type, balance, entitlement, used FROM leave_balances WHERE user_id = ? ORDER BY type'
+        'SELECT leave_type, entitlement, used, pending, remaining FROM leave_balances WHERE user_id = ? ORDER BY leave_type'
     );
     $stmt->execute([$uid]);
     json_ok($stmt->fetchAll());

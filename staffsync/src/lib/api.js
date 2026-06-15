@@ -55,20 +55,6 @@ async function request(module, action, { method = 'GET', body, params = {} } = {
 const get  = (mod, action, params)   => request(mod, action, { method: 'GET',  params })
 const post = (mod, action, body)     => request(mod, action, { method: 'POST', body  })
 
-// For multipart/form-data (file uploads) — skips Content-Type so browser sets boundary
-async function postForm(module, action, formData) {
-  const token = useAuthStore.getState().token
-  const url = new URL(`${BASE}/${module}.php`, window.location.origin)
-  url.searchParams.set('action', action)
-  const headers = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(url.toString(), { method: 'POST', headers, body: formData })
-  let json
-  try { json = await res.json() } catch { json = { success: false, error: 'Invalid response' } }
-  if (!res.ok || json.success === false) throw new ApiError(json.error ?? `HTTP ${res.status}`, res.status)
-  return json.data ?? json
-}
-
 /* ────────────────────────────────────────────────────
    AUTH
 ──────────────────────────────────────────────────── */
