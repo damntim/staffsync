@@ -25,7 +25,7 @@ match($action) {
 /* ─────────────────── LIST ─────────────────── */
 function action_list(): never {
     require_method('GET');
-    $u    = auth_user(['MANAGER','HR','IT_ADMIN']);
+    $u    = auth_user(['MANAGER','HR','IT_ADMIN','FINANCE']);
     $dept = $_GET['dept']   ?? null;
     $role = $_GET['role']   ?? null;
     $q    = $_GET['search'] ?? null;
