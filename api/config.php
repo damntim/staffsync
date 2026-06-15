@@ -14,10 +14,28 @@ if (file_exists(__DIR__ . '/mail_config.php')) {
 }
 
 /* ── Environment ── */
-define('APP_ENV', 'development');
+define('APP_ENV', getenv('APP_ENV') ?: 'production');
 define('APP_NAME', 'StaffSync');
-define('APP_URL', 'http://localhost/staff_cecile');
-define('FRONTEND_URL', 'http://localhost:5173');  // Vite dev server — change to production URL when deployed
+
+// Derive base URL from the current request so the app works on any host.
+// In dev the Vite proxy sends requests through localhost; in production the
+// React build is served from the same origin as the API.
+(function () {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+    // Walk up from /api/<file>.php to find the project root.
+    // __DIR__ is  …/staff_cecile/api  →  parent is  …/staff_cecile
+    $scriptPath = str_replace('\\', '/', __DIR__);
+    $docRoot    = str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? '');
+    $subPath    = $docRoot ? rtrim(str_replace($docRoot, '', dirname($scriptPath)), '/') : '';
+
+    $appUrl      = $scheme . '://' . $host . $subPath;       // e.g. https://yourdomain.com or http://localhost/staff_cecile
+    $frontendUrl = $appUrl;                                   // same origin in production; dev proxy makes this work locally too
+
+    define('APP_URL',      $appUrl);
+    define('FRONTEND_URL', $frontendUrl);
+})();
 
 /* ── Database ── */
 define('DB_HOST', 'localhost');
@@ -46,10 +64,15 @@ define('UPLOAD_MAX_MB', 5);
 define('UPLOAD_DIR', __DIR__ . '/../uploads/');
 define('QRCODE_DIR', __DIR__ . '/../qrcodes/');
 
-/* ── CORS — allow Vite dev server ── */
-$allowed = ['http://localhost:5173', 'http://localhost:4173', 'http://localhost'];
+/* ── CORS ── */
+// In production the React build is served from the same origin, so no
+// cross-origin requests happen. In local dev we also allow Vite ports.
 $origin  = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowed, true)) {
+$allowed = [
+    'http://localhost:5173', 'http://localhost:4173', 'http://localhost',
+    APP_URL,  // allow same-origin calls (e.g. when served from a sub-path)
+];
+if ($origin && (in_array($origin, $allowed, true) || parse_url($origin, PHP_URL_HOST) === ($_SERVER['HTTP_HOST'] ?? ''))) {
     header("Access-Control-Allow-Origin: $origin");
 }
 header('Access-Control-Allow-Credentials: true');

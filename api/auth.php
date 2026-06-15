@@ -441,8 +441,8 @@ function action_invite_resend(): never {
     db()->prepare('UPDATE invites SET token = ?, status = "pending", expires_at = ?, sent_at = NOW() WHERE id = ?')
         ->execute([$token, $expires, $id]);
 
-    $link = APP_URL . '/staffsync/register?invite=' . $token;
-    send_invite_email($inv['email'], $inv['name'], $link, $inv['role']);
+    $link = FRONTEND_URL . '/register?invite=' . $token;
+    send_invite_email($inv['email'], $inv['full_name'], $link, $inv['role']);
     audit_log($u['user_id'], 'invite_resend', "Invite resent to {$inv['email']}", 'user');
     json_ok(['link' => $link]);
 }
@@ -479,7 +479,7 @@ function action_password_reset_request(): never {
              ON DUPLICATE KEY UPDATE token = VALUES(token), expires_at = VALUES(expires_at)'
         )->execute([$user['id'], $token, $expires]);
 
-        $link     = APP_URL . '/staffsync/reset-password?token=' . $token;
+        $link     = FRONTEND_URL . '/reset-password?token=' . $token;
         $name     = $user['full_name'];
         $htmlPw   = <<<HTML
 <!DOCTYPE html><html><body style="margin:0;padding:0;background:#060912;font-family:sans-serif;">
