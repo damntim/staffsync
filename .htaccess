@@ -1,0 +1,23 @@
+Options -Indexes
+RewriteEngine On
+
+# ── Pass Authorization header through Apache (required for JWT Bearer tokens)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# ── API endpoints — route *.php directly (no rewrite needed)
+# ── Uploads — serve static files as-is
+RewriteCond %{REQUEST_URI} ^/staff_cecile/uploads/
+RewriteRule ^ - [L]
+
+# ── Block direct access to config.php
+RewriteRule ^api/config\.php$ - [F,L]
+
+# ── CORS pre-flight passthrough (handled in config.php)
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^ - [L]
+
+# ── All other requests → let Apache serve the file
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]

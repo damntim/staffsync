@@ -1,0 +1,27 @@
+# ── PHP / XAMPP ──────────────────────────────────
+api/config.php
+api/mail_config.php
+uploads/
+vendor/
+
+# ── Node / Vite ──────────────────────────────────
+staffsync/node_modules/
+staffsync/dist/
+staffsync/.env
+staffsync/.env.local
+staffsync/.env.*.local
+
+# ── Logs ─────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS / Editor ──────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Misc ─────────────────────────────────────────
+*.sql.bak
