@@ -55,6 +55,20 @@ async function request(module, action, { method = 'GET', body, params = {} } = {
 const get  = (mod, action, params)   => request(mod, action, { method: 'GET',  params })
 const post = (mod, action, body)     => request(mod, action, { method: 'POST', body  })
 
+// For multipart/form-data (file uploads) — skips Content-Type so browser sets boundary
+async function postForm(module, action, formData) {
+  const token = useAuthStore.getState().token
+  const url = new URL(`${BASE}/${module}.php`, window.location.origin)
+  url.searchParams.set('action', action)
+  const headers = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(url.toString(), { method: 'POST', headers, body: formData })
+  let json
+  try { json = await res.json() } catch { json = { success: false, error: 'Invalid response' } }
+  if (!res.ok || json.success === false) throw new ApiError(json.error ?? `HTTP ${res.status}`, res.status)
+  return json.data ?? json
+}
+
 /* ────────────────────────────────────────────────────
    AUTH
 ──────────────────────────────────────────────────── */
@@ -96,7 +110,15 @@ export const attendanceApi = {
 export const leaveApi = {
   myLeaves:   (params) => get ('leave', 'my_leaves', params),
   list:       (params) => get ('leave', 'list',      params),
-  apply:      (data)   => post('leave', 'apply',     data),
+  apply:      (data, file) => {
+    if (file) {
+      const fd = new FormData()
+      Object.entries(data).forEach(([k, v]) => v != null && fd.append(k, v))
+      fd.append('document', file)
+      return postForm('leave', 'apply', fd)
+    }
+    return post('leave', 'apply', data)
+  },
   approve:    (id, comment) => post('leave', 'approve', { leave_id: id, comment }),
   reject:     (id, comment) => post('leave', 'reject', { leave_id: id, comment }),
   cancel:     (id)     => post('leave', 'cancel',    { leave_id: id }),

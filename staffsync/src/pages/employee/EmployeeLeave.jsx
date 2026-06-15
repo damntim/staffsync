@@ -1,26 +1,25 @@
-import { useState } from 'react'
-import { cn } from '@/lib/cn'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
-import { Calendar, Plus, X, CheckCircle, Clock, XCircle, FileText, Upload, Loader } from 'lucide-react'
+import { Calendar, Plus, X, CheckCircle, Clock, XCircle, FileText, Upload, Loader, Paperclip } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useLeaveBalance, useLeaveTypes, useMyLeaves, useApplyLeave, useCancelLeave } from '@/hooks/useLeave'
 
 const BALANCE_COLORS = ['#6366f1', '#22d3ee', '#a78bfa', '#10b981', '#fbbf24', '#f87171']
 
 const STATUS_CFG = {
-  DRAFT:        { label: 'Draft',     color: '#475569', icon: Clock      },
-  SUBMITTED:    { label: 'Pending',   color: '#fbbf24', icon: Clock      },
-  UNDER_REVIEW: { label: 'In Review', color: '#06b6d4', icon: Clock      },
-  APPROVED:     { label: 'Approved',  color: '#10b981', icon: CheckCircle },
-  REJECTED:     { label: 'Rejected',  color: '#ef4444', icon: XCircle    },
-  CANCELLED:    { label: 'Cancelled', color: '#475569', icon: X          },
+  pending:   { label: 'Pending',   color: '#fbbf24', icon: Clock       },
+  approved:  { label: 'Approved',  color: '#10b981', icon: CheckCircle },
+  rejected:  { label: 'Rejected',  color: '#ef4444', icon: XCircle     },
+  cancelled: { label: 'Cancelled', color: '#475569', icon: X           },
 }
 
 export default function EmployeeLeave() {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState({ leave_type: '', start_date: '', end_date: '', reason: '' })
+  const [form, setForm]         = useState({ type: '', start_date: '', end_date: '', reason: '' })
+  const [file, setFile]         = useState(null)
   const [cancelId, setCancelId] = useState(null)
+  const fileRef                 = useRef(null)
 
   const { data: balanceData, isLoading: balLoading } = useLeaveBalance()
   const { data: typesData }                           = useLeaveTypes()
@@ -34,31 +33,48 @@ export default function EmployeeLeave() {
 
   const up = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const selectedType = leaveTypes.find(t => t.name === form.type) ?? null
+
   const calcDays = () => {
     if (!form.start_date || !form.end_date) return 0
-    const ms = new Date(form.end_date) - new Date(form.start_date)
-    return Math.max(0, Math.round(ms / 86400000) + 1)
+    let count = 0
+    let cur   = new Date(form.start_date)
+    const end = new Date(form.end_date)
+    while (cur <= end) {
+      const dow = cur.getDay()
+      if (dow !== 0 && dow !== 6) count++
+      cur.setDate(cur.getDate() + 1)
+    }
+    return count
+  }
+
+  function resetForm() {
+    setForm({ type: '', start_date: '', end_date: '', reason: '' })
+    setFile(null)
+    if (fileRef.current) fileRef.current.value = ''
+    setShowForm(false)
   }
 
   function handleApply(e) {
     e.preventDefault()
-    if (!form.leave_type)  return toast.error('Select a leave type')
-    if (!form.start_date)  return toast.error('Select a start date')
-    if (!form.end_date)    return toast.error('Select an end date')
+    if (!form.type)          return toast.error('Select a leave type')
+    if (!form.start_date)    return toast.error('Select a start date')
+    if (!form.end_date)      return toast.error('Select an end date')
     if (!form.reason.trim()) return toast.error('Please provide a reason')
-    applyLeave.mutate(form, {
-      onSuccess: () => {
-        setShowForm(false)
-        setForm({ leave_type: '', start_date: '', end_date: '', reason: '' })
-      },
+    if (selectedType?.requires_document == '1' && !file) {
+      return toast.error('A supporting document is required for this leave type')
+    }
+
+    applyLeave.mutate({ data: form, file }, {
+      onSuccess: resetForm,
     })
   }
 
   function handleCancel(id) {
-    cancelLeave.mutate(id, {
-      onSuccess: () => setCancelId(null),
-    })
+    cancelLeave.mutate(id, { onSuccess: () => setCancelId(null) })
   }
+
+  const days = calcDays()
 
   return (
     <div className="space-y-5 pb-6">
@@ -77,55 +93,111 @@ export default function EmployeeLeave() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(6,9,18,0.8)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setShowForm(false)}>
+          onClick={resetForm}>
           <div className="w-full max-w-lg glass-strong rounded-2xl overflow-hidden"
-            style={{ border: '1px solid rgba(99,102,241,0.25)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}
+            style={{ border: '1px solid rgba(99,102,241,0.25)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'rgba(99,102,241,0.15)' }}>
+
+            <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 z-10"
+              style={{ borderColor: 'rgba(99,102,241,0.15)', background: 'rgba(13,17,23,0.98)' }}>
               <div className="flex items-center gap-2">
                 <Calendar size={16} className="text-brand-400" />
                 <h2 className="font-semibold text-text-primary">Apply for Leave</h2>
               </div>
-              <button onClick={() => setShowForm(false)}
+              <button onClick={resetForm}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-4 transition-all">
                 <X size={15} />
               </button>
             </div>
 
             <form onSubmit={handleApply} className="p-6 space-y-4">
-              <Select label="Leave Type" value={form.leave_type} onChange={e => up('leave_type', e.target.value)}>
-                <option value="">— Select type —</option>
-                {leaveTypes.map(t => <option key={t.id ?? t.name} value={t.name}>{t.name}</option>)}
-              </Select>
+              {/* Leave type */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wide">
+                  Leave Type
+                </label>
+                <select
+                  value={form.type}
+                  onChange={e => { up('type', e.target.value); setFile(null); if (fileRef.current) fileRef.current.value = '' }}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm text-text-primary outline-none border transition-all"
+                  style={{
+                    background: 'rgba(26,34,54,0.8)',
+                    borderColor: form.type ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.2)',
+                    color: form.type ? 'inherit' : '#64748b',
+                  }}
+                  required>
+                  <option value="" disabled style={{ color: '#64748b', background: '#0d1117' }}>— Select type —</option>
+                  {leaveTypes.map(t => (
+                    <option key={t.id} value={t.name} style={{ background: '#0d1117', color: '#e2e8f0' }}>
+                      {t.name}{t.requires_document == '1' ? ' *' : ''}
+                    </option>
+                  ))}
+                </select>
+                {leaveTypes.length === 0 && (
+                  <p className="text-[10px] text-text-muted mt-1">Loading types…</p>
+                )}
+                {selectedType?.requires_document == '1' && (
+                  <p className="text-[10px] text-amber-400 mt-1">* Supporting document required for this leave type</p>
+                )}
+              </div>
 
+              {/* Dates */}
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Start Date" type="date" value={form.start_date} onChange={e => up('start_date', e.target.value)} />
                 <Input label="End Date"   type="date" value={form.end_date}   onChange={e => up('end_date',   e.target.value)} />
               </div>
 
-              {calcDays() > 0 && (
+              {/* Day count pill */}
+              {days > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
                   style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)' }}>
                   <Calendar size={13} className="text-brand-400" />
                   <span className="text-text-secondary">
-                    <span className="font-bold text-brand-400">{calcDays()}</span> day{calcDays() !== 1 ? 's' : ''} requested
+                    <span className="font-bold text-brand-400">{days}</span> working day{days !== 1 ? 's' : ''} requested
                   </span>
                 </div>
               )}
 
+              {/* Reason */}
               <Textarea label="Reason" placeholder="Brief reason for leave…" rows={3}
                 value={form.reason} onChange={e => up('reason', e.target.value)} />
 
-              {form.leave_type?.toLowerCase().includes('sick') && (
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed cursor-pointer hover:border-brand-500/40 transition-colors"
-                  style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'rgba(99,102,241,0.04)' }}>
-                  <Upload size={14} className="text-brand-400 flex-shrink-0" />
-                  <span className="text-xs text-text-muted">Upload medical certificate (optional)</span>
+              {/* Document upload — always visible, required when type demands it */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wide">
+                  Supporting Document{selectedType?.requires_document == '1' ? <span className="text-danger-400 ml-1">*</span> : <span className="text-text-muted ml-1">(optional)</span>}
+                </label>
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-3 p-3.5 rounded-xl border border-dashed cursor-pointer transition-all"
+                  style={{
+                    borderColor: file ? 'rgba(99,102,241,0.5)' : selectedType?.requires_document == '1' ? 'rgba(251,191,36,0.35)' : 'rgba(99,102,241,0.2)',
+                    background:  file ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.03)',
+                  }}>
+                  {file
+                    ? <Paperclip size={14} className="text-brand-400 flex-shrink-0" />
+                    : <Upload size={14} className="text-text-muted flex-shrink-0" />}
+                  <span className="text-xs text-text-muted truncate flex-1">
+                    {file ? file.name : 'Click to upload PDF, JPG or PNG (max 5 MB)'}
+                  </span>
+                  {file && (
+                    <button type="button" onClick={e => { e.stopPropagation(); setFile(null); fileRef.current.value = '' }}
+                      className="text-text-muted hover:text-danger-400 transition-colors">
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
-              )}
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
 
               <div className="flex gap-2 pt-1">
-                <Button variant="ghost" fullWidth onClick={() => setShowForm(false)}>Cancel</Button>
+                <Button variant="ghost" fullWidth type="button" onClick={resetForm}>Cancel</Button>
                 <Button variant="primary" fullWidth type="submit"
                   icon={applyLeave.isPending ? <Loader size={13} className="animate-spin" /> : undefined}>
                   {applyLeave.isPending ? 'Submitting…' : 'Submit Request'}
@@ -168,15 +240,15 @@ export default function EmployeeLeave() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {balances.map((b, idx) => {
-            const total = Number(b.total_days ?? b.entitlement ?? 0)
-            const taken = Number(b.days_taken  ?? b.used       ?? 0)
-            const avail = Number(b.remaining   ?? (total - taken))
+            const total = Number(b.entitlement ?? b.total_days ?? 0)
+            const taken = Number(b.used ?? b.days_taken ?? 0)
+            const avail = Number(b.remaining ?? (total - taken))
             const pct   = total > 0 ? Math.min((taken / total) * 100, 100) : 0
             const color = BALANCE_COLORS[idx % BALANCE_COLORS.length]
             return (
-              <div key={b.leave_type_id ?? b.id ?? idx} className="glass-card p-4">
+              <div key={b.id ?? b.leave_type ?? idx} className="glass-card p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-text-secondary truncate">{b.leave_type ?? b.type ?? 'Leave'}</span>
+                  <span className="text-xs font-semibold text-text-secondary truncate">{b.leave_type ?? b.type}</span>
                   <span className="text-xs font-bold flex-shrink-0 ml-1" style={{ color }}>{avail} left</span>
                 </div>
                 <div className="text-2xl font-black mb-1" style={{ color }}>{avail}</div>
@@ -216,9 +288,10 @@ export default function EmployeeLeave() {
         ) : (
           <div className="space-y-3">
             {requests.map(req => {
-              const cfg = STATUS_CFG[req.status] ?? { label: req.status, color: '#94a3b8', icon: Clock }
+              const status = (req.status ?? 'pending').toLowerCase()
+              const cfg = STATUS_CFG[status] ?? { label: status, color: '#94a3b8', icon: Clock }
               const StatusIcon = cfg.icon
-              const days = req.days_requested ?? req.days ?? '?'
+              const reqDays = req.days ?? '?'
               return (
                 <div key={req.id}
                   className="flex items-start gap-4 p-4 rounded-xl border transition-all duration-200 hover:border-brand-500/20"
@@ -232,16 +305,23 @@ export default function EmployeeLeave() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-sm font-semibold text-text-primary">{req.leave_type ?? req.type} Leave</span>
-                      <span className="text-xs text-text-muted">&middot; {days} day{days !== 1 ? 's' : ''}</span>
+                      <span className="text-sm font-semibold text-text-primary">{req.type}</span>
+                      <span className="text-xs text-text-muted">&middot; {reqDays} day{reqDays != 1 ? 's' : ''}</span>
                     </div>
                     <p className="text-xs text-text-muted mb-1.5">{req.reason}</p>
                     <div className="flex items-center gap-3 text-xs text-text-muted flex-wrap">
                       <span>{req.start_date} → {req.end_date}</span>
-                      {req.reviewed_by_name && <span>· Reviewed by {req.reviewed_by_name}</span>}
                     </div>
-                    {req.review_note && (
-                      <p className="text-[10px] text-text-muted mt-1 italic">"{req.review_note}"</p>
+                    {req.comment && (
+                      <p className="text-[10px] text-text-muted mt-1 italic">"{req.comment}"</p>
+                    )}
+                    {req.document_path && (
+                      <a
+                        href={`/uploads/${req.document_path}`}
+                        target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-brand-400 hover:text-brand-300 mt-1 transition-colors">
+                        <Paperclip size={10} /> View document
+                      </a>
                     )}
                   </div>
 
@@ -251,9 +331,8 @@ export default function EmployeeLeave() {
                       <StatusIcon size={10} />
                       {cfg.label}
                     </span>
-                    {req.status === 'SUBMITTED' && (
-                      <button
-                        onClick={() => setCancelId(req.id)}
+                    {status === 'pending' && (
+                      <button onClick={() => setCancelId(req.id)}
                         className="text-[10px] text-danger-400 hover:text-danger-300 transition-colors">
                         Cancel
                       </button>

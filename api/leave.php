@@ -21,20 +21,30 @@ match($action) {
 
 /* ─────────────────── APPLY ─────────────────── */
 function action_apply(): never {
+    // Supports both JSON body and multipart/form-data (for file uploads)
     require_method('POST');
     $u = auth_user();
-    $b = body();
 
-    $type      = strtolower(trim($b['type'] ?? ''));
+    // $_POST is populated for multipart; body() for JSON
+    $b = !empty($_POST) ? $_POST : body();
+
+    $typeName  = trim($b['type'] ?? '');
     $startDate = $b['start_date'] ?? '';
     $endDate   = $b['end_date']   ?? '';
     $reason    = trim($b['reason'] ?? '');
 
-    $validTypes = ['annual','sick','casual','maternity','paternity','unpaid','other'];
-    if (!in_array($type, $validTypes)) json_error('Invalid leave type');
+    if (!$typeName)  json_error('Leave type required');
     if (!$startDate || !$endDate) json_error('Start and end dates required');
     if (strtotime($startDate) > strtotime($endDate)) json_error('End date must be after start date');
     if (!$reason) json_error('Reason required');
+
+    // Validate type exists in DB
+    $tStmt = db()->prepare('SELECT name, requires_document FROM leave_types WHERE name = ? AND is_active = 1 LIMIT 1');
+    $tStmt->execute([$typeName]);
+    $leaveType = $tStmt->fetch();
+    if (!$leaveType) json_error('Invalid leave type');
+
+    $type = $leaveType['name'];
 
     // Business days count (skip weekends)
     $days = business_days($startDate, $endDate);
@@ -251,5 +261,6 @@ function action_balance(): never {
 function action_types(): never {
     require_method('GET');
     auth_user();
-    json_ok(['annual','sick','casual','maternity','paternity','unpaid','other']);
+    $stmt = db()->query('SELECT id, name, days_per_year, requires_document, carry_forward FROM leave_types WHERE is_active = 1 ORDER BY name');
+    json_ok($stmt->fetchAll());
 }

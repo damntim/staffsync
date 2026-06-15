@@ -36,7 +36,7 @@ export function useLeaveList(params) {
 export function useApplyLeave() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: leaveApi.apply,
+    mutationFn: ({ data, file }) => leaveApi.apply(data, file ?? null),
     onSuccess:  () => {
       toast.success('Leave request submitted')
       qc.invalidateQueries({ queryKey: ['leave'] })
