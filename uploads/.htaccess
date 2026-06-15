@@ -1,0 +1,6 @@
+# Block direct PHP execution in uploads (security hardening)
+Options -Indexes
+<FilesMatch "\.(php|phtml|php3|php4|php5|phar)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
