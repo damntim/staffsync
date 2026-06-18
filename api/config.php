@@ -30,11 +30,27 @@ define('APP_NAME', 'StaffSync');
     $docRoot    = str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? '');
     $subPath    = $docRoot ? rtrim(str_replace($docRoot, '', dirname($scriptPath)), '/') : '';
 
-    $appUrl      = $scheme . '://' . $host . $subPath;       // e.g. https://yourdomain.com or http://localhost/staff_cecile
-    $frontendUrl = $appUrl;                                   // same origin in production; dev proxy makes this work locally too
+    $appUrl = $scheme . '://' . $host . $subPath;            // e.g. https://yourdomain.com or http://localhost/staff_cecile
 
-    define('APP_URL',      $appUrl);
-    define('FRONTEND_URL', $frontendUrl);
+    // Where the React app is served (used for invite / reset / enroll links).
+    // Priority:
+    //   1) FRONTEND_URL already defined (e.g. in api/mail_config.php) — explicit override
+    //   2) FRONTEND_URL environment variable
+    //   3) Dev default: Vite dev server on localhost:5173 when the API is hit on plain
+    //      localhost (http, no custom domain) — this is the local-development setup
+    //   4) Otherwise same origin as the API (production build served from same host)
+    if (defined('FRONTEND_URL')) {
+        $frontendUrl = FRONTEND_URL;
+    } elseif (getenv('FRONTEND_URL')) {
+        $frontendUrl = rtrim(getenv('FRONTEND_URL'), '/');
+    } elseif ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1'], true)) {
+        $frontendUrl = 'http://localhost:5173';              // Vite dev server
+    } else {
+        $frontendUrl = $appUrl;                              // production: same origin
+    }
+
+    define('APP_URL', $appUrl);
+    if (!defined('FRONTEND_URL')) define('FRONTEND_URL', $frontendUrl);
 })();
 
 /* ── Database ── */

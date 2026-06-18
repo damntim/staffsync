@@ -110,6 +110,7 @@ export const leaveApi = {
   cancel:     (id)     => post('leave', 'cancel',    { leave_id: id }),
   balance:    (userId) => get ('leave', 'balance',  userId ? { user_id: userId } : {}),
   types:      ()       => get ('leave', 'types'),
+  context:    (id)     => get ('leave', 'context',  { leave_id: id }),
 }
 
 /* ────────────────────────────────────────────────────

@@ -166,6 +166,19 @@ function action_invite_verify(): never {
     ]);
 }
 
+/**
+ * Next employee ID like "EMP-005", based on the highest existing number
+ * (not the row count, which breaks after deletions).
+ */
+function next_employee_id(): string {
+    $stmt = db()->query(
+        "SELECT MAX(CAST(SUBSTRING(employee_id, 5) AS UNSIGNED)) AS mx
+         FROM users WHERE employee_id LIKE 'EMP-%'"
+    );
+    $max = (int) ($stmt->fetch()['mx'] ?? 0);
+    return 'EMP-' . str_pad($max + 1, 3, '0', STR_PAD_LEFT);
+}
+
 /* ─────────────────────────────── REGISTER ──────────────────────────── */
 function action_register(): never {
     require_method('POST');
@@ -194,19 +207,32 @@ function action_register(): never {
     $check->execute([$email]);
     if ($check->fetch()) json_error('Email already registered', 409);
 
-    // Generate employee ID
-    $countStmt = db()->query('SELECT COUNT(*) as c FROM users');
-    $empNum    = ($countStmt->fetch()['c'] ?? 0) + 1;
-    $empId     = 'EMP-' . str_pad($empNum, 3, '0', STR_PAD_LEFT);
-
     $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
 
     $ins = db()->prepare(
         'INSERT INTO users (email, employee_id, full_name, role, department, password_hash, is_active, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 0, NOW())'
     );
-    $ins->execute([$email, $empId, $fullName, $invite['role'], $invite['department'], $hash]);
-    $userId = (int) db()->lastInsertId();
+
+    // Generate a unique employee ID from the highest existing EMP-### number
+    // (COUNT(*) is unsafe once any user has been deleted). Retry on the off
+    // chance of a concurrent collision.
+    $userId = 0;
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        $empId = next_employee_id();
+        try {
+            $ins->execute([$email, $empId, $fullName, $invite['role'], $invite['department'], $hash]);
+            $userId = (int) db()->lastInsertId();
+            break;
+        } catch (\PDOException $e) {
+            // 23000 = integrity constraint (duplicate). Retry with a fresh number.
+            if ($e->getCode() === '23000' && str_contains($e->getMessage(), 'employee_id')) {
+                continue;
+            }
+            throw $e;
+        }
+    }
+    if (!$userId) json_error('Could not allocate an employee ID — please try again', 500);
 
     // Mark invite accepted
     db()->prepare('UPDATE invites SET status = "accepted", accepted_at = NOW() WHERE id = ?')

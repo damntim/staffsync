@@ -338,7 +338,10 @@ export default function CheckInPage() {
   }
 
   /* Check-out */
+  const [checkingOut, setCheckingOut] = useState(false)
   async function handleCheckOut() {
+    if (checkingOut) return            // guard against double-clicks
+    setCheckingOut(true)
     const geo = await getGPS()
     try {
       const result = await attendanceApi.checkOut({ lat: geo?.lat ?? null, lng: geo?.lng ?? null })
@@ -348,7 +351,25 @@ export default function CheckInPage() {
       qc.invalidateQueries({ queryKey: ['attendance', 'my_today'] })
       toast.success(`Checked out — ${Number(result.hours_worked ?? 0).toFixed(1)}h recorded`)
     } catch (err) {
-      toast.error(err.message ?? 'Check-out failed')
+      // 404 = no active check-in (already checked out, or stale UI). Sync to the
+      // real state instead of showing an error.
+      if (err.status === 404) {
+        const today = await attendanceApi.myToday().catch(() => null)
+        if (today?.check_out) {
+          setCheckoutData({ check_out: today.check_out, hours_worked: today.hours_worked })
+          setCheckedIn(false)
+          setCheckedOut(true)
+          toast('You were already checked out today', { icon: 'ℹ️' })
+        } else {
+          setCheckedIn(false)
+          toast('No active check-in found', { icon: 'ℹ️' })
+        }
+        qc.invalidateQueries({ queryKey: ['attendance', 'my_today'] })
+      } else {
+        toast.error(err.message ?? 'Check-out failed')
+      }
+    } finally {
+      setCheckingOut(false)
     }
   }
 

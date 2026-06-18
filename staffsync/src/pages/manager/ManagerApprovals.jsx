@@ -1,11 +1,80 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import {
   CheckSquare, ThumbsUp, ThumbsDown, Clock, Search,
   Calendar, AlertTriangle, MessageSquare, ChevronDown, Loader,
+  ListTodo, Users,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { leaveApi } from '@/lib/api'
 import { useLeaveList, useApproveLeave, useRejectLeave, useLeaveBalance } from '@/hooks/useLeave'
+
+/* Manager decision context: the employee's job/task impact + team coverage. */
+function JobImpact({ leaveId }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['leave', 'context', leaveId],
+    queryFn:  () => leaveApi.context(leaveId),
+    staleTime: 30_000,
+  })
+  const ctx = data?.manager_context
+  const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
+
+  if (isLoading) return <div className="h-16 rounded-xl animate-pulse" style={{ background: 'rgba(99,102,241,0.07)' }} />
+  if (!ctx) return null
+
+  const tasks = ctx.tasks ?? []
+  return (
+    <div className="p-3 rounded-xl space-y-3" style={{ background: 'rgba(26,34,54,0.5)', border: '1px solid rgba(99,102,241,0.12)' }}>
+      <div className="flex items-center gap-2 text-[11px] font-bold text-text-primary">
+        <ListTodo size={13} className="text-brand-400" /> Job &amp; task impact during leave
+      </div>
+
+      {/* task / coverage summary chips */}
+      <div className="flex flex-wrap gap-2 text-[10px]">
+        <span className="px-2 py-1 rounded-lg" style={{ background: 'rgba(99,102,241,0.12)', color: '#818cf8' }}>
+          {ctx.tasks_total} active task{ctx.tasks_total === 1 ? '' : 's'}
+        </span>
+        {ctx.tasks_overdue > 0 && (
+          <span className="px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171' }}>
+            <AlertTriangle size={9}/> {ctx.tasks_overdue} overdue
+          </span>
+        )}
+        <span className="px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: 'rgba(6,182,212,0.12)', color: '#22d3ee' }}>
+          <Users size={9}/> {ctx.team_off_count} teammate{ctx.team_off_count === 1 ? '' : 's'} also off
+        </span>
+      </div>
+
+      {/* task list */}
+      {tasks.length > 0 ? (
+        <div className="space-y-1.5">
+          {tasks.slice(0, 6).map(t => (
+            <div key={t.id} className="flex items-center gap-2 text-[11px] px-2 py-1.5 rounded-lg"
+              style={{ background: 'rgba(15,15,30,0.4)' }}>
+              <span className="flex-1 truncate text-text-secondary">{t.title}</span>
+              <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc' }}>{(t.status||'').replace('_',' ')}</span>
+              {t.due_date && (
+                <span className="text-[9px]" style={{ color: t.overdue ? '#f87171' : '#94a3b8' }}>
+                  {t.overdue ? 'overdue ' : 'due '}{fmt(t.due_date)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[10px] text-text-muted">No active tasks in this period — low impact.</p>
+      )}
+
+      {/* team coverage */}
+      {ctx.team_off?.length > 0 && (
+        <div className="text-[10px] text-text-muted">
+          Also away (same dept): {ctx.team_off.map(p => p.full_name).join(', ')}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const TYPE_CFG = {
   annual:         { label: 'Annual',   color: '#6366f1' },
@@ -293,6 +362,9 @@ export default function ManagerApprovals() {
                         <p className="text-xs italic text-text-secondary">"{req.comment}"</p>
                       </div>
                     )}
+
+                    {/* Manager: job & task impact during the leave */}
+                    {req.type !== 'regularisation' && <JobImpact leaveId={req.id} />}
 
                     {/* Real leave balance */}
                     <BalanceContext userId={req.user_id} leaveType={req.type} />

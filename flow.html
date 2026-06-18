@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STAFFSYNC — Workflow Guide</title>
+<style>
+  :root{
+    --bg:#0a0a14; --card:rgba(255,255,255,0.04); --card2:rgba(255,255,255,0.06);
+    --line:rgba(255,255,255,0.09);
+    --ind:#6366f1; --vio:#8b5cf6; --amb:#f59e0b; --red:#ef4444; --emr:#10b981; --cyn:#06b6d4;
+    --ind-l:#818cf8; --vio-l:#a78bfa; --amb-l:#fbbf24; --red-l:#f87171; --emr-l:#34d399; --cyn-l:#22d3ee;
+    --tx:#e8e8f0; --tx2:#a0a0b8; --tx3:#6b6b85;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.6;overflow-x:hidden}
+  .orb{position:fixed;border-radius:50%;filter:blur(110px);opacity:.18;pointer-events:none;z-index:0}
+  .orb1{width:520px;height:520px;background:var(--ind);top:-180px;left:-160px}
+  .orb2{width:460px;height:460px;background:var(--vio);bottom:-160px;right:-140px}
+
+  /* HEADER */
+  header{text-align:center;padding:70px 20px 30px;position:relative;z-index:2}
+  .logo{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,var(--ind),var(--vio));display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;box-shadow:0 0 46px rgba(139,92,246,0.5)}
+  .kick{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:var(--vio-l);font-weight:700;margin-bottom:14px}
+  h1{font-size:clamp(30px,5vw,52px);font-weight:800;letter-spacing:-1.5px}
+  .grad{background:linear-gradient(120deg,var(--ind-l),var(--vio-l),var(--cyn-l));-webkit-background-clip:text;background-clip:text;color:transparent}
+  header p{color:var(--tx2);max-width:640px;margin:16px auto 0;font-size:17px}
+
+  /* ROLE TABS */
+  .tabs{position:sticky;top:0;z-index:30;background:rgba(10,10,20,0.82);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .tab{padding:11px 20px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--tx2);transition:.25s;display:flex;align-items:center;gap:8px}
+  .tab:hover{transform:translateY(-2px);color:var(--tx)}
+  .tab.on{color:#fff;border-color:transparent}
+  .tab[data-r=it].on{background:linear-gradient(135deg,#ef4444,#b91c1c)}
+  .tab[data-r=hr].on{background:linear-gradient(135deg,#f59e0b,#b45309)}
+  .tab[data-r=emp].on{background:linear-gradient(135deg,#6366f1,#4338ca)}
+  .tab[data-r=mgr].on{background:linear-gradient(135deg,#8b5cf6,#6d28d9)}
+  .tab[data-r=fin].on{background:linear-gradient(135deg,#10b981,#047857)}
+
+  /* WRAP */
+  main{max-width:1000px;margin:0 auto;padding:46px 20px 120px;position:relative;z-index:2}
+  .panel{display:none;animation:fade .5s ease}
+  .panel.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+  .role-head{display:flex;align-items:center;gap:18px;margin-bottom:10px}
+  .role-ic{width:60px;height:60px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0}
+  .role-head h2{font-size:30px;font-weight:800}
+  .role-head .badge{display:inline-block;padding:4px 11px;border-radius:7px;font-size:11px;font-weight:800;letter-spacing:1px;margin-top:6px}
+  .intro{color:var(--tx2);font-size:16px;margin:8px 0 38px;padding:16px 20px;background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:12px}
+
+  /* STEPS TIMELINE */
+  .steps{position:relative;padding-left:42px}
+  .steps::before{content:"";position:absolute;left:16px;top:8px;bottom:8px;width:2px;background:linear-gradient(var(--vio),transparent)}
+  .step{position:relative;margin-bottom:26px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;transition:.3s}
+  .step:hover{transform:translateX(6px);border-color:rgba(139,92,246,0.4);box-shadow:0 12px 30px rgba(0,0,0,0.3)}
+  .step .num{position:absolute;left:-42px;top:20px;width:34px;height:34px;border-radius:50%;background:var(--bg);border:2px solid var(--vio);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:var(--vio-l)}
+  .step h3{font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .step .where{font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:6px;background:rgba(139,92,246,0.14);color:var(--vio-l);border:1px solid rgba(139,92,246,0.25)}
+  .step p{color:var(--tx2);font-size:15px;margin-top:8px}
+  .step .tip{margin-top:12px;font-size:13.5px;color:var(--cyn-l);background:rgba(6,182,212,0.07);border:1px solid rgba(6,182,212,0.2);border-radius:9px;padding:9px 13px}
+  .step .tip b{color:var(--cyn-l)}
+
+  /* mini pipeline inside step */
+  .mini{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .mini span{font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;background:var(--card2);border:1px solid var(--line)}
+  .mini span.ok{border-color:rgba(16,185,129,0.3);color:var(--emr-l)}
+
+  /* handoff banner */
+  .handoff{margin:34px 0 8px;text-align:center;font-size:14px;color:var(--vio-l);font-weight:700}
+  .handoff .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:50px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.3)}
+
+  footer{text-align:center;color:var(--tx3);font-size:13px;padding:30px;border-top:1px solid var(--line);position:relative;z-index:2}
+  footer a{color:var(--vio-l);text-decoration:none}
+  .legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:30px auto 0;max-width:760px;font-size:13px;color:var(--tx2)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%}
+
+  /* ===== TABLET ===== */
+  @media(max-width:760px){
+    header{padding:50px 18px 24px}
+    .tabs{gap:7px;padding:11px 10px}
+    .tab{padding:9px 13px;font-size:13px}
+    main{padding:34px 16px 90px}
+  }
+  /* ===== PHONE ===== */
+  @media(max-width:560px){
+    header{padding:40px 16px 20px}
+    header p{font-size:15px}
+    .legend{gap:9px 14px;font-size:12px}
+    /* horizontally scrollable role tabs instead of wrapping */
+    .tabs{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:10px 12px}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{flex:0 0 auto;white-space:nowrap}
+    main{padding:26px 14px 80px}
+    .role-head{gap:12px}
+    .role-ic{width:48px;height:48px;font-size:24px}
+    .role-head h2{font-size:23px}
+    .intro{font-size:14.5px;padding:14px 16px}
+    /* tighten timeline so it fits narrow screens */
+    .steps{padding-left:30px}
+    .steps::before{left:11px}
+    .step{padding:18px 16px}
+    .step .num{left:-30px;width:28px;height:28px;font-size:13px;top:18px}
+    .step h3{font-size:16px}
+    .step .where{font-size:10px;padding:2px 7px}
+    .step p{font-size:14px}
+    .mini span{font-size:11.5px;padding:6px 10px}
+    .handoff .pill{font-size:12.5px;padding:8px 14px;text-align:center}
+  }
+</style>
+</head>
+<body>
+<div class="orb orb1"></div><div class="orb orb2"></div>
+
+<header>
+  <div class="logo">⬡</div>
+  <div class="kick">Interactive Manual Guide</div>
+  <h1>How <span class="grad">STAFFSYNC</span> Works</h1>
+  <p>Pick a role and follow its journey through the system step by step — from the very first login to the daily tasks each person performs.</p>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--red)"></span> IT Admin sets up</span>
+    <span><span class="dot" style="background:var(--amb)"></span> HR onboards</span>
+    <span><span class="dot" style="background:var(--ind)"></span> Employee works</span>
+    <span><span class="dot" style="background:var(--vio)"></span> Manager approves</span>
+    <span><span class="dot" style="background:var(--emr)"></span> Finance pays</span>
+  </div>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="tab on" data-r="it">🛡️ IT Admin</div>
+  <div class="tab" data-r="hr">👔 HR</div>
+  <div class="tab" data-r="emp">🧑‍💻 Employee</div>
+  <div class="tab" data-r="mgr">📋 Manager</div>
+  <div class="tab" data-r="fin">💰 Finance</div>
+</div>
+
+<main>
+
+  <!-- ============ IT ADMIN ============ -->
+  <section class="panel on" data-p="it">
+    <div class="role-head">
+      <div class="role-ic" style="background:rgba(239,68,68,0.15)">🛡️</div>
+      <div><h2>IT Administrator</h2><span class="badge" style="background:rgba(239,68,68,0.15);color:var(--red-l)">FIRST USER · SYSTEM SETUP</span></div>
+    </div>
+    <div class="intro" style="border-left-color:var(--red)">You are the very first account on a clean install. Nothing happens until you configure the building blocks of attendance and invite the people who run the company.</div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Log in for the first time <span class="where">/login</span></h3><p>Sign in with the seeded IT_ADMIN credentials. Because no one else exists yet, self-registration is disabled across the whole system — every other account must be invited.</p></div>
+      <div class="step"><div class="num">2</div><h3>Define a Geofence zone <span class="where">/dashboard/it-admin/geofence</span></h3><p>Drop DevX Ltd HQ on the map and set its allowed radius (in metres). This becomes the virtual boundary every check-in is measured against.</p><div class="tip">💡 <b>Why first:</b> attendance can't be verified until the system knows <i>where</i> people are allowed to check in.</div></div>
+      <div class="step"><div class="num">3</div><h3>Generate the rotating QR <span class="where">/dashboard/it-admin/qrcodes</span></h3><p>Activate a QR zone tied to the geofence. The token rotates on a timer so a screenshot can't be reused — layer two of the anti-proxy pipeline.</p></div>
+      <div class="step"><div class="num">4</div><h3>Invite the HR &amp; admin team</h3><p>Send invite-only registration links to the first HR Officer and other administrators. Each link is a time-limited token emailed to the recipient.</p><div class="mini"><span>Enter email + role + department</span><span>→</span><span>System emails one-time link</span><span class="ok">→ recipient registers</span></div></div>
+      <div class="step"><div class="num">5</div><h3>Watch everything via Audit &amp; Security <span class="where">/it-admin/audit · /security</span></h3><p>Every significant action — logins, approvals, record changes — is written to an append-only audit log you can review. The Security page surfaces active sessions and access controls.</p></div>
+    </div>
+    <div class="handoff"><span class="pill">🛡️ IT Admin done → hands the company over to <b style="color:var(--amb-l)">HR</b> →</span></div>
+  </section>
+
+  <!-- ============ HR ============ -->
+  <section class="panel" data-p="hr">
+    <div class="role-head">
+      <div class="role-ic" style="background:rgba(245,158,11,0.15)">👔</div>
+      <div><h2>HR Officer</h2><span class="badge" style="background:rgba(245,158,11,0.15);color:var(--amb-l)">ONBOARDING · POLICY · OVERSIGHT</span></div>
+    </div>
+    <div class="intro" style="border-left-color:var(--amb)">HR is the hub of the platform — you bring people in, set the rules they operate under, and keep the records honest. You have the widest menu in the system.</div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Invite employees &amp; managers <span class="where">/dashboard/hr/invites</span></h3><p>Enter each person's email, role and department. The system generates a one-time link and emails it. There is no public sign-up — this is how everyone joins.</p></div>
+      <div class="step"><div class="num">2</div><h3>Manage the workforce <span class="where">/dashboard/hr/users</span></h3><p>Review every account, activate or deactivate users, and see who has enrolled their face. Fine-tune what each role can do under <b>RBAC</b>.</p></div>
+      <div class="step"><div class="num">3</div><h3>Set the rules <span class="where">/hr/policy · /hr/shifts</span></h3><p>Configure leave types &amp; balances, working shifts, and attendance policy. These drive late/absent detection and leave entitlements automatically.</p></div>
+      <div class="step"><div class="num">4</div><h3>Enroll &amp; manage faces <span class="where">/dashboard/hr/face-profiles</span></h3><p>Oversee biometric enrollment. Only an encrypted 128-d descriptor is kept — never a photo — so privacy is preserved by design.</p></div>
+      <div class="step"><div class="num">5</div><h3>Monitor live operations <span class="where">/hr/presence · /hr/attendance · /hr/leave</span></h3><p>The Presence Board shows who is currently checked in. Review attendance records and act as the <b>second approver</b> on leave requests after the manager.</p><div class="mini"><span>Employee applies</span><span>→ Manager approves</span><span class="ok">→ HR final approval</span></div></div>
+      <div class="step"><div class="num">6</div><h3>Sync, report &amp; approve payroll <span class="where">/hr/sync · /hr/reports · /hr/payroll</span></h3><p>Watch the Sync Engine keep attendance &amp; leave consistent, pull org-wide reports, and give the HR sign-off on payroll runs before payslips go out.</p></div>
+    </div>
+    <div class="handoff"><span class="pill">👔 HR onboarded everyone → now the <b style="color:var(--ind-l)">Employees</b> can work →</span></div>
+  </section>
+
+  <!-- ============ EMPLOYEE ============ -->
+  <section class="panel" data-p="emp">
+    <div class="role-head">
+      <div class="role-ic" style="background:rgba(99,102,241,0.15)">🧑‍💻</div>
+      <div><h2>Employee</h2><span class="badge" style="background:rgba(99,102,241,0.15);color:var(--ind-l)">DAILY USER</span></div>
+    </div>
+    <div class="intro" style="border-left-color:var(--ind)">This is where the everyday magic happens. One place to clock in securely, manage leave, track tasks and read payslips — no paper, no email chains.</div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Accept invite &amp; enroll face <span class="where">/register → /enroll-face</span></h3><p>Open the emailed link, fill the registration form, then enroll your face through a guided wizard. The account activates only after enrollment.</p></div>
+      <div class="step"><div class="num">2</div><h3>Log in (password + face) <span class="where">/login → /face-verify</span></h3><p>Enter your password, then pass a quick face check. Two factors, every login.</p></div>
+      <div class="step"><div class="num">3</div><h3>Check in — the 3-layer pipeline <span class="where">/dashboard/employee/check-in</span></h3><p>The signature feature. Each layer must pass before a verified attendance record is created.</p>
+        <div class="mini"><span>📍 Location inside geofence</span><span>→ 🔲 Validate rotating QR</span><span>→ 🙂 Face verify</span><span class="ok">→ ✓ Checked in</span></div>
+        <div class="tip">💡 Fail any layer (wrong place, expired QR, no face match) and the attempt is logged &amp; you retry — that's what kills proxy attendance.</div></div>
+      <div class="step"><div class="num">4</div><h3>Apply for leave <span class="where">/dashboard/employee/leave</span></h3><p>Pick a type &amp; dates, attach a document if needed, and submit. It routes to your manager, then HR. Approved leave auto-updates your attendance via the Sync Engine.</p></div>
+      <div class="step"><div class="num">5</div><h3>Work your allocated tasks <span class="where">/dashboard/employee/tasks</span></h3><p>Every task a manager assigns to you appears on your board with its priority &amp; due date. Tick off each sub-step, update your progress %, and the card moves To-Do → In Progress → Done. Add comments to ask questions without leaving the task.</p>
+        <div class="mini"><span>See assigned task</span><span>→ tick sub-steps</span><span>→ update %</span><span class="ok">→ manager sees it live</span></div></div>
+      <div class="step"><div class="num">6</div><h3>View attendance &amp; payslips <span class="where">/employee/attendance · /payslips</span></h3><p>Your monthly attendance calendar and downloadable payslips — with a clear breakdown of gross, PAYE, RSSB &amp; net — all in one place. Dispute a payslip if something looks off.</p></div>
+      <div class="step"><div class="num">7</div><h3>Chat with the team <span class="where">/dashboard/chat</span></h3><p>The built-in messenger keeps work talk inside STAFFSYNC. Join <b>public</b> channels open to everyone, your <b>team</b> channel, or start a <b>direct message</b> — created automatically on your first message.</p>
+        <div class="mini"><span>📎 Files: image · video · doc · audio</span><span>😀 Emoji reactions</span><span>✓✓ Read receipts</span><span class="ok">⏳ Ephemeral status</span></div>
+        <div class="tip">💡 Unread badges show what you've missed; you can only post to channels you've joined, and every message is written to the audit log.</div></div>
+    </div>
+    <div class="handoff"><span class="pill">🧑‍💻 Employee submits requests → the <b style="color:var(--vio-l)">Manager</b> reviews →</span></div>
+  </section>
+
+  <!-- ============ MANAGER ============ -->
+  <section class="panel" data-p="mgr">
+    <div class="role-head">
+      <div class="role-ic" style="background:rgba(139,92,246,0.15)">📋</div>
+      <div><h2>Manager</h2><span class="badge" style="background:rgba(139,92,246,0.15);color:var(--vio-l)">TEAM LEAD · FIRST APPROVER</span></div>
+    </div>
+    <div class="intro" style="border-left-color:var(--vio)">You see your team in real time and act as the first gate on leave and payroll. No more chasing email threads — everything waiting for you is in one queue.</div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Open your team dashboard <span class="where">/dashboard/manager</span></h3><p>A live snapshot of your team — who's present, pending approvals, and task status — the moment you log in.</p></div>
+      <div class="step"><div class="num">2</div><h3>Watch presence <span class="where">/manager/team · /manager/presence</span></h3><p>See who is checked in right now and where, instead of an out-of-date spreadsheet.</p></div>
+      <div class="step"><div class="num">3</div><h3>Approve leave (step 1 of 2) <span class="where">/dashboard/manager/approvals</span></h3><p>Each request lands in your queue with the employee's reason. Approve or reject with a comment; approval forwards it to HR for the final sign-off.</p><div class="mini"><span>Pending</span><span class="ok">→ You approve</span><span>→ HR finalizes</span><span class="ok">→ Sync updates attendance</span></div></div>
+      <div class="step"><div class="num">4</div><h3>Allocate &amp; manage tasks <span class="where">/dashboard/manager/tasks</span></h3><p>Create a task — title, priority (Low → Urgent), due date and sub-steps — then assign it to a team member. The Kanban board moves it through its lifecycle and overdue work is flagged automatically.</p>
+        <div class="mini"><span>📝 Create + sub-steps</span><span>→ 👥 Assign</span><span>→ 📈 Track %</span><span class="ok">→ ✅ Done</span></div>
+        <div class="mini"><span>TO-DO</span><span>IN PROGRESS</span><span>BLOCKED</span><span>IN REVIEW</span><span class="ok">DONE</span></div>
+        <div class="tip">💡 <b>Real-time:</b> as employees tick sub-tasks &amp; update progress, your board reflects it — and you can drop comments right on the task.</div></div>
+      <div class="step"><div class="num">5</div><h3>Sign off payroll (manager step) <span class="where">/dashboard/manager/payroll</span></h3><p>When Finance submits a run, you review and approve the manager step before it moves to HR — a checkpoint for accuracy.</p></div>
+      <div class="step"><div class="num">6</div><h3>Pull team reports <span class="where">/dashboard/manager/reports</span></h3><p>Attendance, leave and task summaries for your team, exportable for planning.</p></div>
+    </div>
+    <div class="handoff"><span class="pill">📋 Manager &amp; HR approve the run → <b style="color:var(--emr-l)">Finance</b> finalizes pay →</span></div>
+  </section>
+
+  <!-- ============ FINANCE ============ -->
+  <section class="panel" data-p="fin">
+    <div class="role-head">
+      <div class="role-ic" style="background:rgba(16,185,129,0.15)">💰</div>
+      <div><h2>Finance Officer</h2><span class="badge" style="background:rgba(16,185,129,0.15);color:var(--emr-l)">PAYROLL · DEDUCTIONS · PAYSLIPS</span></div>
+    </div>
+    <div class="intro" style="border-left-color:var(--emr)">You turn verified attendance into accurate pay. The system does the Rwanda-specific math automatically, so the monthly run is a few clicks instead of a few days of Excel.</div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Configure salaries <span class="where">/dashboard/finance/salaries</span></h3><p>Set each employee's basic salary, allowances and overtime rate. This is the foundation every payroll run reads from.</p></div>
+      <div class="step"><div class="num">2</div><h3>Set up deductions <span class="where">/dashboard/finance/deductions</span></h3><p>Manage the Rwanda statutory &amp; custom deductions: PAYE, RSSB pension, RSSB medical, plus BRD/SACCO loans and union dues.</p></div>
+      <div class="step"><div class="num">3</div><h3>Create &amp; process a payroll run <span class="where">/dashboard/finance/payroll</span></h3><p>Start a run for the period. It pulls verified data, calculates gross, applies every deduction and produces net pay for all staff automatically.</p>
+        <div class="mini"><span>run_create</span><span>→ run_process</span><span>→ run_submit</span><span>→ approvals</span><span class="ok">→ run_finalize</span></div></div>
+      <div class="step"><div class="num">4</div><h3>Route through approval</h3><p>Submit the run — it passes through <b>Manager → HR</b> sign-off before you can finalize. Nothing is paid without the two-step check.</p><div class="tip">💡 This approval chain is the workflow-automation backbone: every step is logged &amp; visible.</div></div>
+      <div class="step"><div class="num">5</div><h3>Finalize &amp; send payslips <span class="where">/dashboard/finance/payslips</span></h3><p>Once approved, finalize the run — payslips are generated and emailed to every employee in one step. Status flips to PAID.</p></div>
+      <div class="step"><div class="num">6</div><h3>Handle complaints <span class="where">/dashboard/finance/complaints</span></h3><p>If an employee disputes a payslip, it arrives here for you to review and resolve — closing the loop on transparency.</p></div>
+    </div>
+    <div class="handoff"><span class="pill">💰 Pay sent → the cycle is complete &amp; fully synchronized ✓</span></div>
+  </section>
+
+</main>
+
+<footer>
+  STAFFSYNC · Cecile MUKARUKAKA · AUCA 2026 &nbsp;·&nbsp; <a href="presentation.html">← Back to the Defence Presentation</a>
+</footer>
+
+<script>
+  const tabsBar=document.getElementById('tabs');
+  const tabs=[...document.querySelectorAll('.tab')];
+  const panels=[...document.querySelectorAll('.panel')];
+
+  function selectRole(t){
+    if(!t) return;
+    const r=t.dataset.r;
+    tabs.forEach(x=>x.classList.toggle('on',x===t));
+    panels.forEach(p=>p.classList.toggle('on',p.dataset.p===r));
+    // bring the chosen tab fully into view inside the scroll strip
+    t.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
+  }
+
+  // delegate clicks (survives the horizontally-scrollable tab strip on mobile)
+  tabsBar.addEventListener('click',e=>{
+    const t=e.target.closest('.tab');
+    if(t) selectRole(t);
+  });
+
+  /* On touch, a tab tap can be mistaken for the start of a horizontal scroll,
+     which cancels the click. Detect a genuine tap (little movement) and fire it. */
+  let tx=0,ty=0,moved=false,startTab=null;
+  tabsBar.addEventListener('touchstart',e=>{
+    const t=e.target.closest('.tab');
+    startTab=t; moved=false;
+    tx=e.touches[0].clientX; ty=e.touches[0].clientY;
+  },{passive:true});
+  tabsBar.addEventListener('touchmove',e=>{
+    if(Math.abs(e.touches[0].clientX-tx)>8 || Math.abs(e.touches[0].clientY-ty)>8) moved=true;
+  },{passive:true});
+  tabsBar.addEventListener('touchend',e=>{
+    if(!moved && startTab) selectRole(startTab);
+    startTab=null;
+  },{passive:true});
+</script>
+</body>
+</html>

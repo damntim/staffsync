@@ -36,31 +36,64 @@ function action_checkin(): never {
     $dup->execute([$userId, $today]);
     if ($dup->fetch()) json_error('Already checked in today', 409);
 
-    // Get user shift
-    $uRow = db()->prepare('SELECT shift_start, department FROM users WHERE id = ? LIMIT 1');
+    // ── Require a VALID shift before allowing check-in ──
+    // (1) user must be assigned to an active shift
+    // (2) today must be one of the shift's working days
+    // (3) today must not be a shift holiday
+    $shift = get_user_shift($userId);
+    if (!$shift) {
+        json_error('No shift assigned. Please contact HR before checking in.', 403);
+    }
+
+    // Working-day check — days_of_week is a CSV like "1,2,3,4,5" (Mon=1 … Sun=7)
+    $dow = (int) date('N');   // ISO-8601: Mon=1 … Sun=7
+    $workDays = array_filter(array_map('intval', explode(',', (string)($shift['days_of_week'] ?? ''))));
+    if ($workDays && !in_array($dow, $workDays, true)) {
+        json_error('Today is not a working day for your shift.', 403);
+    }
+
+    // Holiday check (shift-specific or company-wide where shift_id IS NULL)
+    $hol = db()->prepare(
+        'SELECT id FROM shift_holidays WHERE (shift_id = ? OR shift_id IS NULL) AND date = ? LIMIT 1'
+    );
+    $hol->execute([$shift['id'], $today]);
+    if ($hol->fetch()) {
+        json_error('Today is a holiday for your shift.', 403);
+    }
+
+    $checkInTime = date('H:i:s');              // time-of-day, for late/present comparison
+    $checkInDT   = $today . ' ' . $checkInTime; // full DATETIME to store
+    // Prefer the shift's own start time + its grace window; fall back to users.shift_start
+    $uRow = db()->prepare('SELECT shift_start FROM users WHERE id = ? LIMIT 1');
     $uRow->execute([$userId]);
     $usr = $uRow->fetch();
-
-    $checkInTime = date('H:i:s');
-    $shiftStart  = $usr['shift_start'] ?? '07:00:00';
-    $lateAfter   = date('H:i:s', strtotime($shiftStart) + 15 * 60);  // 15 min grace
+    $shiftStart  = $shift['start_time'] ?? ($usr['shift_start'] ?? '07:00:00');
+    $grace       = isset($shift['grace_minutes']) ? (int)$shift['grace_minutes'] : 15;
+    $lateAfter   = date('H:i:s', strtotime($shiftStart) + $grace * 60);
     $status      = $checkInTime > $lateAfter ? 'LATE' : 'PRESENT';
 
     // QR + geofence validation
     $qrToken = $b['qr_token'] ?? null;
+    $zoneId  = i($b['zone_id'] ?? 0);
     $lat     = f($b['lat'] ?? 0);
     $lng     = f($b['lng'] ?? 0);
 
-    if ($qrToken) {
-        $qrValid = validate_qr_token($qrToken);
-        if (!$qrValid) json_error('QR token invalid or expired', 400);
+    // The QR token was already validated in the dedicated QR step. Because the
+    // token rotates every ~30s, by the time the user finishes the geofence +
+    // face steps the exact token may have rotated. So here we re-confirm the
+    // user is checking in against a REAL, ACTIVE zone — accepting the current
+    // token OR one that expired within the last rotation window (grace).
+    if ($qrToken || $zoneId) {
+        if (!validate_qr_checkin((string)$qrToken, $zoneId)) {
+            json_error('QR token invalid or expired', 400);
+        }
     }
 
     $method = $b['method'] ?? 'manual';
 
     // Build INSERT dynamically — avoid crashing on missing optional columns
     $cols   = ['user_id','date','check_in','status','created_at'];
-    $vals   = [$userId, $today, $checkInTime, $status, date('Y-m-d H:i:s')];
+    $vals   = [$userId, $today, $checkInDT, $status, date('Y-m-d H:i:s')];
     $marks  = ['?','?','?','?','?'];
 
     foreach (['method' => $method, 'check_in_lat' => ($lat ?: null), 'check_in_lng' => ($lng ?: null)] as $col => $val) {
@@ -76,6 +109,29 @@ function action_checkin(): never {
     json_ok(['attendance_id' => $attId, 'status' => $status, 'check_in' => $checkInTime, 'date' => $today]);
 }
 
+/**
+ * Fetch the active shift assigned to a user (or null if none).
+ * Returns the shift row plus the assigned_at date.
+ */
+function get_user_shift(int $userId): ?array {
+    // shift_members / shifts may not exist on older installs — be defensive
+    try {
+        $stmt = db()->prepare(
+            'SELECT s.*, sm.assigned_at
+             FROM shift_members sm
+             JOIN shifts s ON s.id = sm.shift_id
+             WHERE sm.user_id = ? AND s.is_active = 1
+             ORDER BY sm.assigned_at DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    } catch (\PDOException) {
+        return null;
+    }
+}
+
 function validate_qr_token(string $token): bool {
     // Support both old column name (current_token) and new (token)
     $r   = db()->query("SHOW COLUMNS FROM qr_zones LIKE 'token'");
@@ -85,6 +141,45 @@ function validate_qr_token(string $token): bool {
     );
     $stmt->execute([$token]);
     return (bool) $stmt->fetch();
+}
+
+/**
+ * Final check-in QR validation — tolerant of token rotation.
+ * The token was already validated in the QR step; here we accept it if it
+ * matches an active zone and either (a) is still current, or (b) expired no
+ * more than one rotation cycle (+ small clock skew) ago. This stops a valid
+ * check-in from being rejected just because the user took a few seconds to
+ * finish the geofence + face steps.
+ */
+function validate_qr_checkin(string $token, int $zoneId = 0): bool {
+    $r   = db()->query("SHOW COLUMNS FROM qr_zones LIKE 'token'");
+    $col = $r->fetch() ? 'token' : 'current_token';
+
+    // 1) Try the exact token against an active zone, tolerating one rotation cycle.
+    if ($token !== '') {
+        $stmt = db()->prepare(
+            "SELECT token_expires_at, rotate_seconds FROM qr_zones
+             WHERE `$col` = ? AND is_active = 1 LIMIT 1"
+        );
+        $stmt->execute([$token]);
+        if ($zone = $stmt->fetch()) {
+            $rotate = (int)($zone['rotate_seconds'] ?? 30);
+            $grace  = max($rotate, 30) + 10;            // one cycle + clock skew
+            $expiry = strtotime($zone['token_expires_at']);
+            if ($expiry !== false && time() <= $expiry + $grace) return true;
+        }
+    }
+
+    // 2) Token rotated past the grace window, but the QR step already proved the
+    //    user was at the zone. Accept the check-in if the zone they validated
+    //    against is real & active.
+    if ($zoneId > 0) {
+        $z = db()->prepare('SELECT id FROM qr_zones WHERE id = ? AND is_active = 1 LIMIT 1');
+        $z->execute([$zoneId]);
+        if ($z->fetch()) return true;
+    }
+
+    return false;
 }
 
 /* ─────────────────── CHECK-OUT ─────────────────── */
@@ -105,13 +200,16 @@ function action_checkout(): never {
     $att = $stmt->fetch();
     if (!$att) json_error('No active check-in found for today', 404);
 
-    $checkOutTime = date('H:i:s');
-    $inTs    = strtotime($today . ' ' . $att['check_in']);
-    $hours   = round((time() - $inTs) / 3600, 2);
+    $checkOutDT = date('Y-m-d H:i:s');         // full DATETIME to store
+    // check_in is a full DATETIME; tolerate a legacy time-only value too.
+    $ci      = $att['check_in'];
+    $inTs    = strtotime(strlen((string)$ci) <= 8 ? ($today . ' ' . $ci) : $ci);
+    $hours   = ($inTs && $inTs > 0) ? round((time() - $inTs) / 3600, 2) : 0;
+    if ($hours < 0) $hours = 0;
 
     // Build UPDATE dynamically — avoid crashing on missing optional columns
     $sets   = ['check_out = ?', 'hours_worked = ?'];
-    $params = [$checkOutTime, $hours];
+    $params = [$checkOutDT, $hours];
 
     foreach (['check_out_lat' => ($lat ?: null), 'check_out_lng' => ($lng ?: null)] as $col => $val) {
         $r = db()->query("SHOW COLUMNS FROM attendance LIKE '$col'");

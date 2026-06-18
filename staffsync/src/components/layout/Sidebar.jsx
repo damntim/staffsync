@@ -23,6 +23,8 @@ const NAV_CONFIG = {
   ],
   [ROLES.MANAGER]: [
     { label: 'Dashboard',   icon: LayoutDashboard, to: '/dashboard/manager'             },
+    { label: 'Check In',    icon: QrCode,          to: '/dashboard/check-in'             },
+    { label: 'My Attendance', icon: Clock,         to: '/dashboard/my-attendance'        },
     { label: 'Team',        icon: Users,           to: '/dashboard/manager/team'         },
     { label: 'Approvals',   icon: CheckSquare,     to: '/dashboard/manager/approvals'    },
     { label: 'Tasks',       icon: CheckSquare,     to: '/dashboard/manager/tasks'        },
@@ -32,6 +34,8 @@ const NAV_CONFIG = {
   ],
   [ROLES.HR]: [
     { label: 'Dashboard',      icon: LayoutDashboard, to: '/dashboard/hr'               },
+    { label: 'Check In',       icon: QrCode,          to: '/dashboard/check-in'         },
+    { label: 'My Attendance',  icon: Clock,           to: '/dashboard/my-attendance'    },
     { label: 'Users',          icon: Users,           to: '/dashboard/hr/users'         },
     { label: 'Invites',        icon: UserPlus,        to: '/dashboard/hr/invites'       },
     { label: 'Shifts',         icon: CalendarClock,   to: '/dashboard/hr/shifts'        },
@@ -50,6 +54,9 @@ const NAV_CONFIG = {
   ],
   [ROLES.IT_ADMIN]: [
     { label: 'Dashboard',  icon: LayoutDashboard, to: '/dashboard/it-admin'             },
+    { label: 'Check In',   icon: QrCode,          to: '/dashboard/check-in'             },
+    { label: 'My Attendance', icon: Clock,        to: '/dashboard/my-attendance'        },
+    { label: 'Shifts',     icon: CalendarClock,   to: '/dashboard/it-admin/shifts'      },
     { label: 'QR Codes',   icon: QrCode,          to: '/dashboard/it-admin/qrcodes'     },
     { label: 'Geofence',   icon: MapPin,          to: '/dashboard/it-admin/geofence'    },
     { label: 'Audit Log',  icon: AlertTriangle,   to: '/dashboard/it-admin/audit'       },
@@ -57,6 +64,8 @@ const NAV_CONFIG = {
   ],
   [ROLES.FINANCE]: [
     { label: 'Dashboard',   icon: LayoutDashboard, to: '/dashboard/finance'             },
+    { label: 'Check In',    icon: QrCode,          to: '/dashboard/check-in'             },
+    { label: 'My Attendance', icon: Clock,         to: '/dashboard/my-attendance'        },
     { label: 'Payroll',     icon: DollarSign,      to: '/dashboard/finance/payroll'     },
     { label: 'Salaries',    icon: Wallet,          to: '/dashboard/finance/salaries'    },
     { label: 'Payslips',    icon: Receipt,         to: '/dashboard/finance/payslips'    },

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
-import { attendanceApi } from '@/lib/api'
+import { attendanceApi, shiftsApi } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { Clock, Download, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, Loader } from 'lucide-react'
@@ -15,6 +15,7 @@ const STATUS_CFG = {
   HALF_DAY:       { label: 'Half Day',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
   WFH:            { label: 'WFH',       color: '#6366f1', bg: 'rgba(99,102,241,0.12)'  },
   HOLIDAY:        { label: 'Holiday',   color: '#475569', bg: 'rgba(71,85,105,0.12)'   },
+  UPCOMING:       { label: 'Upcoming',  color: '#475569', bg: 'rgba(71,85,105,0.08)'   },
 }
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -31,11 +32,15 @@ function monthRange(y, m) {
   return { from, to }
 }
 
-/* Build a full month grid from API records */
-function buildMonthRows(y, m, records) {
+/* Build a full month grid from API records.
+   `startKey` = the date (YYYY-MM-DD) the user's shift was assigned. Days before
+   this are NOT tracked (the user wasn't on a shift yet) and are dropped. */
+function buildMonthRows(y, m, records, startKey) {
   const days = new Date(y, m + 1, 0).getDate()
   const recMap = {}
   records.forEach(r => { recMap[r.date?.slice(0, 10)] = r })
+
+  const todayKey = isoDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
 
   const rows = []
   for (let d = 1; d <= days; d++) {
@@ -44,12 +49,24 @@ function buildMonthRows(y, m, records) {
     const key    = isoDate(y, m, d)
     const rec    = recMap[key]
 
+    // Skip days before the shift started — attendance begins at shift assignment.
+    if (startKey && key < startKey) continue
+
     if (dow === 0 || dow === 6) {
       rows.push({ date, key, status: 'HOLIDAY', checkIn: null, checkOut: null, hours: 0, rec: null })
       continue
     }
 
-    const status = rec?.status ?? 'ABSENT'
+    // A working day with no record is only "absent" if it's in the PAST.
+    // Today (not yet checked in) and future days are "upcoming" — not absent.
+    let status
+    if (rec?.status) {
+      status = rec.status
+    } else if (key < todayKey) {
+      status = 'ABSENT'
+    } else {
+      status = 'UPCOMING'
+    }
     const checkIn  = rec?.check_in  ?? null
     const checkOut = rec?.check_out ?? null
     const hours    = rec?.hours_worked ? +rec.hours_worked : 0
@@ -77,8 +94,16 @@ export default function EmployeeAttendance() {
     staleTime: 60_000,
   })
 
+  // Shift assignment date — attendance tracking starts here, not the 1st.
+  const { data: myShift } = useQuery({
+    queryKey: ['shifts', 'my_shift'],
+    queryFn:  () => shiftsApi.myShift(),
+    staleTime: 5 * 60_000,
+  })
+  const startKey = myShift?.assigned_at ? myShift.assigned_at.slice(0, 10) : null
+
   const records = Array.isArray(rawRecords) ? rawRecords : []
-  const rows    = buildMonthRows(viewMonth.y, viewMonth.m, records)
+  const rows    = buildMonthRows(viewMonth.y, viewMonth.m, records, startKey)
 
   const summary = {
     present:  rows.filter(r => r.status === 'PRESENT').length,
@@ -102,7 +127,9 @@ export default function EmployeeAttendance() {
   const prevMonth = () => setViewMonth(v => v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 })
   const nextMonth = () => setViewMonth(v => v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 })
 
-  const firstDow  = new Date(viewMonth.y, viewMonth.m, 1).getDay()
+  // Pad leading blanks to align the FIRST rendered day to its weekday column
+  // (rows may start mid-month when the shift was assigned partway through).
+  const firstDow  = rows.length ? rows[0].date.getDay() : new Date(viewMonth.y, viewMonth.m, 1).getDay()
   const gridCells = [...Array(firstDow).fill(null), ...rows]
 
   return (

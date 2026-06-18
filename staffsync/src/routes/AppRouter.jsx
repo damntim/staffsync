@@ -108,6 +108,10 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
+      /* Shared — every role can check in & see their own attendance */
+      { path: 'check-in',            element: wrap(<CheckInPage />,        ALL) },
+      { path: 'my-attendance',       element: wrap(<EmployeeAttendance />, ALL) },
+
       /* Employee */
       { path: 'employee',            element: wrap(<EmployeeDashboard />,  E) },
       { path: 'employee/attendance', element: wrap(<EmployeeAttendance />, E) },
@@ -157,6 +161,7 @@ const router = createBrowserRouter([
 
       /* IT Admin */
       { path: 'it-admin',            element: wrap(<ITAdminDashboard />,  IT) },
+      { path: 'it-admin/shifts',     element: wrap(<HRShifts />,          IT) },
       { path: 'it-admin/qrcodes',    element: wrap(<ITAdminQRCodes />,    IT) },
       { path: 'it-admin/geofence',   element: wrap(<ITAdminGeofence />,   IT) },
       { path: 'it-admin/audit',      element: wrap(<ITAdminAudit />,      IT) },

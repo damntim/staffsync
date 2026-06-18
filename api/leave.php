@@ -16,6 +16,7 @@ match($action) {
     'cancel'  => action_cancel(),
     'balance' => action_balance(),
     'types'   => action_types(),
+    'context' => action_context(),
     default   => json_error("Unknown action: $action"),
 };
 
@@ -154,7 +155,11 @@ function action_my_leaves(): never {
     json_ok($stmt->fetchAll());
 }
 
-/* ─────────────────── APPROVE ─────────────────── */
+/* ─────────────────── APPROVE (two-stage: Manager + HR) ───────────────────
+ * Both a MANAGER and an HR must approve (in any order). The request only
+ * becomes fully "approved" once BOTH stages are approved. Either rejecting
+ * marks the whole request "rejected".
+ */
 function action_approve(): never {
     require_method('POST');
     $u  = auth_user(['MANAGER','HR']);
@@ -162,26 +167,66 @@ function action_approve(): never {
     $id = i($b['leave_id'] ?? 0);
     if (!$id) json_error('leave_id required');
 
-    $stmt = db()->prepare('SELECT * FROM leave_requests WHERE id = ? AND status = "pending" LIMIT 1');
+    $stmt = db()->prepare('SELECT * FROM leave_requests WHERE id = ? LIMIT 1');
     $stmt->execute([$id]);
     $req = $stmt->fetch();
-    if (!$req) json_error('Leave request not found or not pending', 404);
+    if (!$req) json_error('Leave request not found', 404);
+    if (in_array($req['status'], ['rejected','cancelled'], true)) {
+        json_error('This request is already ' . $req['status'], 409);
+    }
+
+    $isHR   = $u['role'] === 'HR' || $u['role'] === 'IT_ADMIN';
+    $stage  = $isHR ? 'hr' : 'manager';
+    $note   = trim((string)($b['comment'] ?? $b['note'] ?? '')) ?: null;
+
+    // Already actioned this stage?
+    if (($req["{$stage}_status"] ?? 'pending') === 'approved') {
+        json_error('You have already approved this request', 409);
+    }
+
+    // HR-stage policy guard: don't let it exceed the allowed balance
+    if ($isHR) {
+        $bal = get_balance((int)$req['user_id'], $req['type']);
+        if ($bal !== null && $bal < (float)$req['days']) {
+            json_error("Exceeds allowed balance — available {$bal}d, requested {$req['days']}d. Cannot approve.", 422);
+        }
+    }
 
     db()->prepare(
-        'UPDATE leave_requests SET status = "approved", reviewed_by = ?, reviewed_at = NOW(), comment = ? WHERE id = ?'
-    )->execute([$u['user_id'], $b['comment'] ?? null, $id]);
+        "UPDATE leave_requests
+         SET {$stage}_status = 'approved', {$stage}_id = ?, {$stage}_note = ?, {$stage}_acted_at = NOW()
+         WHERE id = ?"
+    )->execute([$u['user_id'], $note, $id]);
+
+    audit_log($u['user_id'], 'leave_approve', "Leave $id — {$stage} approved", 'leave');
+
+    // Re-read to see if BOTH stages are now approved
+    $stmt->execute([$id]);
+    $req = $stmt->fetch();
+
+    if ($req['manager_status'] === 'approved' && $req['hr_status'] === 'approved') {
+        finalize_leave_approved($req, (int)$u['user_id']);
+        json_ok(['stage' => $stage, 'finalised' => true, 'message' => 'Leave fully approved']);
+    }
+
+    $waiting = $stage === 'manager' ? 'HR' : 'manager';
+    json_ok(['stage' => $stage, 'finalised' => false, 'message' => "Approved — awaiting $waiting sign-off"]);
+}
+
+/* Apply the side-effects once a leave is fully approved by both stages. */
+function finalize_leave_approved(array $req, int $actorId): void {
+    db()->prepare("UPDATE leave_requests SET status = 'approved', approver_id = ?, approved_at = NOW() WHERE id = ?")
+        ->execute([$actorId, $req['id']]);
 
     // Deduct balance
-    db()->prepare(
-        'UPDATE leave_balances SET used = used + ? WHERE user_id = ? AND leave_type = ?'
-    )->execute([$req['days'], $req['user_id'], $req['type']]);
+    db()->prepare('UPDATE leave_balances SET used = used + ? WHERE user_id = ? AND leave_type = ?')
+        ->execute([$req['days'], $req['user_id'], $req['type']]);
 
-    // Auto-set attendance records to ON_LEAVE for the date range
+    // Auto-set attendance records to ON_LEAVE for the date range (skip weekends)
     $cur = strtotime($req['start_date']);
     $end = strtotime($req['end_date']);
     while ($cur <= $end) {
-        $dow = (int) date('N', $cur);
-        if ($dow < 6) {
+        if ((int) date('N', $cur) < 6) {
             $d = date('Y-m-d', $cur);
             $chk = db()->prepare('SELECT id FROM attendance WHERE user_id = ? AND date = ?');
             $chk->execute([$req['user_id'], $d]);
@@ -195,23 +240,135 @@ function action_approve(): never {
         }
         $cur = strtotime('+1 day', $cur);
     }
-
-    audit_log($u['user_id'], 'leave_approve', "Leave $id approved ({$req['days']} days)", 'leave');
-    json_ok('Leave approved');
+    audit_log($actorId, 'leave_finalise', "Leave {$req['id']} fully approved ({$req['days']} days)", 'leave');
 }
 
-/* ─────────────────── REJECT ─────────────────── */
+/* ─────────────────── REJECT (either stage rejects the whole request) ─────────────────── */
 function action_reject(): never {
     require_method('POST');
     $u  = auth_user(['MANAGER','HR']);
     $b  = body();
     $id = i($b['leave_id'] ?? 0);
+    if (!$id) json_error('leave_id required');
 
-    db()->prepare('UPDATE leave_requests SET status = "rejected", reviewed_by = ?, reviewed_at = NOW(), comment = ? WHERE id = ? AND status = "pending"')
-        ->execute([$u['user_id'], $b['comment'] ?? null, $id]);
+    $stmt = db()->prepare('SELECT * FROM leave_requests WHERE id = ? LIMIT 1');
+    $stmt->execute([$id]);
+    $req = $stmt->fetch();
+    if (!$req) json_error('Leave request not found', 404);
+    if (in_array($req['status'], ['rejected','cancelled','approved'], true)) {
+        json_error('This request is already ' . $req['status'], 409);
+    }
 
-    audit_log($u['user_id'], 'leave_reject', "Leave $id rejected", 'leave');
-    json_ok('Leave rejected');
+    $isHR  = $u['role'] === 'HR' || $u['role'] === 'IT_ADMIN';
+    $stage = $isHR ? 'hr' : 'manager';
+    $note  = trim((string)($b['comment'] ?? $b['note'] ?? '')) ?: null;
+
+    db()->prepare(
+        "UPDATE leave_requests
+         SET {$stage}_status = 'rejected', {$stage}_id = ?, {$stage}_note = ?, {$stage}_acted_at = NOW(),
+             status = 'rejected', rejection_reason = ?
+         WHERE id = ?"
+    )->execute([$u['user_id'], $note, $note, $id]);
+
+    audit_log($u['user_id'], 'leave_reject', "Leave $id rejected at {$stage} stage", 'leave');
+    json_ok(['stage' => $stage, 'message' => 'Leave rejected']);
+}
+
+/* ─────────────────── APPROVER CONTEXT ───────────────────
+ * Role-specific decision context for a single leave request.
+ * Manager → tasks in range + team coverage. HR → balance/policy check.
+ */
+function action_context(): never {
+    require_method('GET');
+    $u  = auth_user(['MANAGER','HR','IT_ADMIN']);
+    $id = i($_GET['leave_id'] ?? 0);
+    if (!$id) json_error('leave_id required');
+
+    $stmt = db()->prepare(
+        'SELECT lr.*, u.full_name, u.department, u.employee_id
+         FROM leave_requests lr JOIN users u ON u.id = lr.user_id WHERE lr.id = ? LIMIT 1'
+    );
+    $stmt->execute([$id]);
+    $req = $stmt->fetch();
+    if (!$req) json_error('Leave request not found', 404);
+
+    $out = [
+        'leave'          => $req,
+        'manager_status' => $req['manager_status'] ?? 'pending',
+        'hr_status'      => $req['hr_status'] ?? 'pending',
+        'manager_note'   => $req['manager_note'] ?? null,
+        'hr_note'        => $req['hr_note'] ?? null,
+    ];
+
+    /* ── Manager context: job & task impact + team coverage ── */
+    $tasks = [];
+    try {
+        $tq = db()->prepare(
+            "SELECT id, title, status, priority, due_date
+             FROM tasks
+             WHERE assignee_id = ?
+               AND status <> 'DONE'
+               AND (due_date IS NULL OR due_date BETWEEN ? AND ?
+                    OR due_date < ?)            -- overdue tasks still matter
+             ORDER BY (due_date IS NULL), due_date
+             LIMIT 50"
+        );
+        $tq->execute([$req['user_id'], $req['start_date'], $req['end_date'], date('Y-m-d')]);
+        $tasks = $tq->fetchAll();
+    } catch (\PDOException) { $tasks = []; }
+
+    $today = date('Y-m-d');
+    foreach ($tasks as &$t) {
+        $t['overdue'] = $t['due_date'] && $t['due_date'] < $today;
+    }
+    unset($t);
+
+    // Teammates (same department) also off during the requested range
+    $coverage = [];
+    try {
+        $cq = db()->prepare(
+            "SELECT lr.id, lr.start_date, lr.end_date, lr.type, u.full_name
+             FROM leave_requests lr JOIN users u ON u.id = lr.user_id
+             WHERE u.department = ? AND lr.user_id <> ?
+               AND lr.status = 'approved'
+               AND NOT (lr.end_date < ? OR lr.start_date > ?)
+             ORDER BY lr.start_date LIMIT 20"
+        );
+        $cq->execute([$req['department'], $req['user_id'], $req['start_date'], $req['end_date']]);
+        $coverage = $cq->fetchAll();
+    } catch (\PDOException) { $coverage = []; }
+
+    $out['manager_context'] = [
+        'tasks'         => $tasks,
+        'tasks_total'   => count($tasks),
+        'tasks_overdue' => count(array_filter($tasks, fn($t) => !empty($t['overdue']))),
+        'team_off'      => $coverage,
+        'team_off_count'=> count($coverage),
+    ];
+
+    /* ── HR context: balance / policy check ── */
+    $remaining  = get_balance((int)$req['user_id'], $req['type']);
+    $reqDays    = (float)$req['days'];
+    $withinBal  = $remaining === null ? null : ($remaining >= $reqDays);
+
+    // requires_document policy
+    $needsDoc = false;
+    try {
+        $tt = db()->prepare('SELECT requires_document FROM leave_types WHERE name = ? LIMIT 1');
+        $tt->execute([$req['type']]);
+        $needsDoc = (bool) ($tt->fetchColumn() ?: false);
+    } catch (\PDOException) {}
+
+    $out['hr_context'] = [
+        'requested_days' => $reqDays,
+        'remaining'      => $remaining,
+        'within_balance' => $withinBal,
+        'requires_document' => $needsDoc,
+        'document_attached' => !empty($req['document_path']),
+        'document_ok'    => !$needsDoc || !empty($req['document_path']),
+    ];
+
+    json_ok($out);
 }
 
 /* ─────────────────── CANCEL ─────────────────── */

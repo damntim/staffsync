@@ -2,20 +2,72 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { leaveApi } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { Calendar, CheckCircle, XCircle, Search, ChevronDown } from 'lucide-react'
+import { Calendar, CheckCircle, XCircle, Search, ChevronDown, ShieldCheck, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 
+// DB statuses are lowercase: pending | approved | rejected | cancelled
 const STATUS_CFG = {
-  SUBMITTED: { label: 'Pending',   color: '#f59e0b' },
-  APPROVED:  { label: 'Approved',  color: '#10b981' },
-  REJECTED:  { label: 'Rejected',  color: '#ef4444' },
-  CANCELLED: { label: 'Cancelled', color: '#475569' },
+  pending:   { label: 'Pending',   color: '#f59e0b' },
+  approved:  { label: 'Approved',  color: '#10b981' },
+  rejected:  { label: 'Rejected',  color: '#ef4444' },
+  cancelled: { label: 'Cancelled', color: '#475569' },
+}
+
+/* one check row */
+function CheckRow({ ok, label, value }) {
+  return (
+    <div className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg"
+      style={{ background: 'rgba(15,15,30,0.4)' }}>
+      <span className="text-text-secondary">{label}</span>
+      <span className="flex items-center gap-1 font-semibold"
+        style={{ color: ok === false ? '#f87171' : ok === true ? '#34d399' : '#94a3b8' }}>
+        {value}{ok === true ? ' ✓' : ok === false ? ' ✗' : ''}
+      </span>
+    </div>
+  )
+}
+
+/* HR decision check: does the request meet policy & not exceed allowed balance? */
+function HRCheck({ leaveId }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['leave', 'context', leaveId],
+    queryFn:  () => leaveApi.context(leaveId),
+    staleTime: 30_000,
+  })
+  if (isLoading) return <div className="h-16 rounded-xl animate-pulse" style={{ background: 'rgba(99,102,241,0.07)' }} />
+  const hr = data?.hr_context
+  if (!hr) return null
+
+  const within = hr.within_balance
+  return (
+    <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(26,34,54,0.5)', border: `1px solid ${within === false ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.2)'}` }}>
+      <div className="flex items-center gap-2 text-[11px] font-bold text-text-primary">
+        <ShieldCheck size={13} style={{ color: within === false ? '#f87171' : '#34d399' }} /> HR policy &amp; balance check
+      </div>
+      <CheckRow ok={within} label="Within allowed balance"
+        value={hr.remaining == null ? `${hr.requested_days}d requested` : `${hr.requested_days}d / ${hr.remaining}d left`} />
+      <CheckRow ok={hr.document_ok} label={hr.requires_document ? 'Document (required)' : 'Document'}
+        value={hr.document_attached ? 'Attached' : (hr.requires_document ? 'Missing' : 'N/A')} />
+      {data?.manager_status && (
+        <CheckRow ok={data.manager_status === 'approved' ? true : data.manager_status === 'rejected' ? false : null}
+          label="Manager sign-off" value={data.manager_status} />
+      )}
+      {data?.manager_note && (
+        <div className="text-[10px] text-text-muted italic px-2.5">Manager's note: "{data.manager_note}"</div>
+      )}
+      {within === false && (
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: '#f87171' }}>
+          <AlertTriangle size={11}/> Exceeds entitlement — approval is blocked.
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function HROfficerLeave() {
   const qc = useQueryClient()
-  const [status,   setStatus]   = useState('SUBMITTED')
+  const [status,   setStatus]   = useState('pending')
   const [search,   setSearch]   = useState('')
   const [note,     setNote]     = useState({})
   const [expanded, setExpanded] = useState(null)
@@ -85,7 +137,7 @@ export default function HROfficerLeave() {
           </div>
         ) : (
           filtered.map(r => {
-            const cfg  = STATUS_CFG[r.status] ?? STATUS_CFG.SUBMITTED
+            const cfg  = STATUS_CFG[r.status] ?? STATUS_CFG.pending
             const open = expanded === r.id
             const days = daysBetween(r.start_date, r.end_date)
             return (
@@ -125,7 +177,10 @@ export default function HROfficerLeave() {
                         <span className="text-text-secondary font-medium block mb-1">Reason:</span>{r.reason}
                       </div>
                     )}
-                    {r.status === 'SUBMITTED' && (
+                    {/* HR: balance & policy check */}
+                    {(r.leave_type ?? r.type) !== 'regularisation' && <HRCheck leaveId={r.id} />}
+
+                    {r.status === 'pending' && (
                       <div className="space-y-2">
                         <textarea value={note[r.id] ?? ''} onChange={e => setNote(p => ({ ...p, [r.id]: e.target.value }))}
                           placeholder="Add note (optional)…" rows={2}
